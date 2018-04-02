@@ -1,0 +1,9 @@
+[submodule "volumes/shared/poc-key-indexation_spark-streaming"]
+	path = volumes/shared/poc-key-indexation_spark-streaming
+	url = https://github.com/arialwhite/poc-key-indexation_spark-streaming.git
+[submodule "images/poc-key-indexation_backend"]
+	path = images/poc-key-indexation_backend
+	url = https://github.com/arialwhite/poc-key-indexation_backend.git
+[submodule "images/poc-key-indexation_frontend"]
+	path = images/poc-key-indexation_frontend
+	url = https://github.com/arialwhite/poc-key-indexation_frontend.git
