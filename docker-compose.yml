@@ -1,0 +1,193 @@
+version: '2.1'
+
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    hostname: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 32181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - '32181:32181'
+    volumes:
+      - ./volumes/zookeeper/data:/var/lib/zookeeper/data
+      - ./volumes/zookeeper/log:/var/lib/zookeeper/log
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    hostname: kafka
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:32181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    ports:
+      - '9092:9092'
+      - '29092:29092'
+    volumes:
+      - ./volumes/kafka/data:/var/lib/kafka/data
+  schema-registry:
+    image: confluentinc/cp-schema-registry:latest
+    hostname: schema-registry
+    depends_on:
+      - kafka
+      - zookeeper
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_KAFKASTORE_CONNECTION_URL: zookeeper:32181
+    ports:
+      - "8081:8081"
+  rest-proxy:
+    image: confluentinc/cp-kafka-rest:latest
+    hostname: rest-proxy
+    depends_on:
+      - zookeeper
+      - kafka
+      - schema-registry
+    environment:
+      KAFKA_REST_ZOOKEEPER_CONNECT: "zookeeper:32181"
+      KAFKA_REST_LISTENERS: "http://rest-proxy:8082"
+      KAFKA_REST_SCHEMA_REGISTRY_URL: "http://schema-registry:8081"
+      KAFKA_REST_HOST_NAME: "rest-proxy"
+    ports:
+      - "8082:8082"
+  kafdrop:
+    image: thomsch98/kafdrop
+    hostname: kafdrop
+    depends_on:
+      - zookeeper
+      - kafka
+      - schema-registry
+      - rest-proxy
+    environment:
+      ZOOKEEPER_CONNECT: zookeeper:32181
+      ZK_HOSTS: zookeeper:32181
+      LISTEN: 9000
+    ports:
+      - "9000:9000"
+  cassandra:
+    image: cassandra-setup
+    build: ./images/cassandra-setup
+    hostname: cassandra
+    depends_on:
+      - zookeeper
+      - kafka
+      - schema-registry
+      - rest-proxy
+      - kafdrop
+    expose:
+      - 7000
+      - 7001
+      - 7199
+      - 9042
+      - 9160
+    ports:
+      - '9042:9042'
+      - '9160:9160'
+    volumes:
+      - ./volumes/cassandra:/var/lib/cassandra
+      - ./volumes/shared/initdb.d:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "[ $$(nodetool statusgossip) = running ]"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+  backend:
+    image: arialwhite/backend
+    build: ./images/poc-key-indexation_backend
+    hostname: backend
+    environment:
+      SERVER_PORT: 9333
+      SERVER_ADDRESS: 0.0.0.0
+      CASSANDRA_CONTACTPOINTS: cassandra
+      CASSANDRA_PORT: 9042
+      CASSANDRA_KEYSPACE: kafka_topics
+      KAFKA_HOST: kafka
+      KAFKA_PORT: 29092
+      KAFKA_TARGET_TOPIC: small_topic
+    expose:
+      - 9333
+    depends_on:
+      cassandra:
+        condition: service_healthy
+    ports:
+      - 9333:9333
+    volumes:
+      - ./volumes/producer/repository:/root/.m2/repository
+  frontend:
+    image: arialwhite/frontend
+    build: ./images/poc-key-indexation_frontend
+    hostname: frontend
+    environment:
+      SERVER_ADDRESS: 0.0.0.0
+      BACKEND_HOSTNAME: localhost
+      BACKEND_PORT: 9333
+    expose:
+      - 4200
+    depends_on:
+      - backend
+    ports:
+      - 4200:4200
+    volumes:
+      - ./volumes/frontend/local/node_modules:/usr/src/app/node_modules
+      - ./volumes/frontend/global/node_modules:/home/node/.npm-global
+  spark-master:
+    image: gettyimages/spark
+    command: bin/spark-class org.apache.spark.deploy.master.Master -h spark-master
+    hostname: spark-master
+    depends_on:
+      - backend
+    environment:
+      MASTER: spark://spark-master:7077
+      SPARK_CONF_DIR: /conf
+      SPARK_PUBLIC_DNS: localhost
+      SPARK_MASTER_WEBUI_PORT: 18080
+    expose:
+      - 17001
+      - 17002
+      - 17003
+      - 17004
+      - 17005
+      - 17006
+      - 7077
+      - 6066
+    ports:
+      - 4040:4040
+      - 6066:6066
+      - 7077:7077
+      - 18080:18080
+    volumes:
+      - ./volumes/shared:/opt/docker-shared:ro
+      - ./volumes/spark/conf/master:/conf:ro
+      - ./volumes/spark/data/master:/tmp/data
+  spark-worker:
+    image: gettyimages/spark
+    command: bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
+    hostname: spark-worker
+    depends_on:
+      - backend
+    environment:
+      SPARK_CONF_DIR: /conf
+      SPARK_WORKER_CORES: 2
+      SPARK_WORKER_MEMORY: 1g
+      SPARK_WORKER_PORT: 8881
+      SPARK_WORKER_WEBUI_PORT: 18081
+      SPARK_PUBLIC_DNS: localhost
+    links:
+      - spark-master
+    expose:
+      - 17012
+      - 17013
+      - 17014
+      - 17015
+      - 17016
+      - 8881
+    ports:
+      - 18081:18081
+    volumes:
+      - ./volumes/spark/conf/worker:/conf:ro
+      - ./volumes/spark/data/worker:/tmp/data
+    

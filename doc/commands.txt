@@ -1,0 +1,9 @@
+# Docker commands
+
+# run bash int the docker-compose network
+docker run -it --link 11b09e060dd1 --net pockeyindexation_default --rm cassandra-setup /bin/bash
+
+# cqlsh commands
+
+# show keyspaces
+describe keyspaces

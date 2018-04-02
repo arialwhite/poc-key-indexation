@@ -1,0 +1,11 @@
+# Docker volumes
+volumes/cassandra/
+volumes/kafka/data/
+volumes/zookeeper/data/
+volumes/zookeeper/log/
+volumes/producer/repository/
+volumes/frontend/global/
+volumes/frontend/local/
+volumes/producer/
+images/monitoring/node_modules/
+images/kafka-producer/target/
